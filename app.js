@@ -1,9 +1,9 @@
 'use strict';
 const forms = [
-  {title:'Sketch submission', fields:['Premise','Beats','What I like','What I dislike or want help with']},
+  {title:'Script context', fields:['Premise','Beats','What I like','What I dislike or want help with']},
   {title:'Film shot list', item:'Shot', fields:['Detailed description','Planned framing and action','Who is in the shot','Lighting','Cut or alternate coverage']},
   {title:'Character notes', item:'Character', fields:['Character name','Who they are','How they speak and play']},
-  {title:'Stage blocking', item:'Moment', fields:['Positions','Who or what is onstage','Movement','Transition']}
+  {title:'Staging directions', item:'Moment', fields:['Positions','Who or what is onstage','Movement','Transition']}
 ];
 const lineFields = ['Script line','Direction'];
 const storageKey = location.pathname.replace(/index\.html$/,'') + 'sketch-production-v1';
@@ -51,12 +51,12 @@ function ordering(parent,list,index,item){
 }
 function render(){
   const form=forms[data.active];
-  const nav=document.querySelector('nav');nav.replaceChildren();
+  const nav=document.querySelector('aside nav');nav.replaceChildren();
   forms.forEach((f,i)=>{
-    const tab=button(nav,f.title,()=>change(()=>{data.active=i;}));
+    const tab=button(nav,f.title,()=>{location.hash=routes[i];});
     if(i===data.active) tab.setAttribute('aria-current','page');
   });
-  document.querySelector('h1').textContent=form.title;
+  document.querySelector('#form-title').textContent=form.title;
   const details=document.querySelector('#details');details.replaceChildren();
   for(const key of ['Sketch title','Author','Date']) field(details,data.meta,key,key==='Date'?'date':'text');
   const fields=document.querySelector('#fields');fields.replaceChildren();
@@ -77,7 +77,7 @@ function render(){
     }
     if(form.item){
       const bar=ordering(card,records,index,form.item);
-      if(data.active===2) button(bar,'Print character PDF',()=>exportForm(index));
+      if(data.active===2) button(bar,'Download character PDF',()=>exportForm(index));
     }
   });
   if(form.item) button(fields,'Add '+form.item.toLowerCase(),()=>change(()=>records.push({})));
@@ -101,8 +101,86 @@ function buildPrint(){
     });
   });
 }
-function exportForm(index){selected=index;buildPrint();window.print();}
+const fileInput=document.querySelector('#script-file');
+const include=document.querySelector('#include');
+const fileStatus=document.querySelector('#file-status');
+let attachment, selection=0;
+fileInput.onchange=async()=>{
+  const version=++selection;
+  attachment=null;
+  include.checked=false;
+  document.querySelector('#include-label').hidden=true;
+  const file=fileInput.files[0];
+  fileStatus.textContent=file?'Checking PDF…':'';
+  if(!file) return;
+  try {
+    const bytes=await file.arrayBuffer();
+    const pdf=await PDFLib.PDFDocument.load(bytes,{throwOnInvalidObject:true});
+    if(!pdf.getPageCount()) throw Error('Empty PDF');
+    // Validate that every page can be copied before offering a combined export.
+    const test=await PDFLib.PDFDocument.create();
+    await test.copyPages(pdf,pdf.getPageIndices());
+    if(version!==selection) return;
+    attachment=pdf;
+    include.checked=true;
+    document.querySelector('#include-label').hidden=false;
+    fileStatus.textContent=pdf.getPageCount()+' script page(s) attached for this session.';
+  } catch {
+    if(version!==selection) return;
+    fileInput.value='';
+    fileStatus.textContent='Could not read this PDF. Choose an unlocked PDF or download the form on its own.';
+  }
+};
+async function exportForm(index){
+  const form=forms[data.active], records=data.records[data.active], meta=data.meta;
+  const script=include.checked?attachment:null;
+  const title=meta['Sketch title']||'Untitled sketch';
+  const name=[title,form.title,index!==undefined?(records[index]['Character name']||'Character '+(index+1)):null].filter(Boolean).join(' - ');
+  const content=[{text:title,fontSize:24,bold:true},{text:form.title,fontSize:16,margin:[0,4,0,8]},
+    {text:'Author: '+(meta.Author||'—')+'    Date: '+(meta.Date||'—')}];
+  function note(record,key){
+    // Keep each label with its first line while allowing a long answer to flow.
+    content.push({text:key,bold:true,margin:[0,9,0,2],headlineLevel:1},{text:record[key]||'—'});
+  }
+  records.forEach((record,i)=>{
+    if(index!==undefined&&index!==i) return;
+    if(form.item) content.push({text:form.item+' '+(i+1)+(record['Character name']?' · '+record['Character name']:''),fontSize:16,bold:true,margin:[0,14,0,0],headlineLevel:1});
+    form.fields.filter(key=>key!=='Character name').forEach(key=>note(record,key));
+    (record.lines||[]).forEach((line,j)=>{
+      content.push({text:'Line '+(j+1),fontSize:13,bold:true,margin:[0,10,0,0],headlineLevel:1});
+      lineFields.forEach(key=>note(line,key));
+    });
+  });
+  try {
+    const definition={info:{title:name},pageSize:'LETTER',pageMargins:[50,46,50,48],content,defaultStyle:{fontSize:11,lineHeight:1.2},
+      footer:(page,count)=>({text:page+' / '+count,alignment:'right',margin:[0,12,50,0],fontSize:9}),
+      pageBreakBefore:(node,following)=>node.headlineLevel===1&&!following.length};
+    let bytes=await new Promise((resolve,reject)=>pdfMake.createPdf(definition).getBuffer(resolve));
+    if(script){
+      const packet=await PDFLib.PDFDocument.load(bytes);
+      for(const page of await packet.copyPages(script,script.getPageIndices())) packet.addPage(page);
+      bytes=await packet.save();
+    }
+    const url=URL.createObjectURL(new Blob([bytes],{type:'application/pdf'}));
+    const link=element('a',document.body);link.href=url;link.download=name.replace(/[^a-zA-Z0-9._ -]/g,'_')+'.pdf';link.click();link.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),60000);
+    fileStatus.textContent='PDF downloaded.';
+  } catch {fileStatus.textContent=script?'Could not create the packet. Uncheck “Include script in PDF” to download the form separately.':'Could not generate the PDF. Use your browser’s Print command to save the form.';}
+}
 window.addEventListener('beforeprint',buildPrint);
 window.addEventListener('afterprint',()=>{selected=undefined;});
 document.querySelector('#pdf').onclick=()=>exportForm();
-render();
+const routes=['script-context','shot-list','character-notes','staging-directions'];
+forms.forEach((form,i)=>{
+  const link=element('a',document.querySelector('#home nav'),form.title);
+  link.href='#'+routes[i];
+});
+function route(){
+  const index=routes.indexOf(location.hash.slice(1));
+  document.querySelector('#home').hidden=index>=0;
+  document.querySelector('.layout').hidden=index<0;
+  if(index>=0){data.active=index;render();}
+  window.scrollTo(0,0);
+}
+window.addEventListener('hashchange',route);
+route();
