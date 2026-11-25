@@ -15,7 +15,7 @@ try {
   if (saved) data = JSON.parse(saved);
 } catch { statusNode.textContent = 'Draft storage unavailable'; }
 function save(){
-  try {localStorage.setItem(storageKey,JSON.stringify(data));statusNode.textContent='Saved in this browser';}
+  try {localStorage.setItem(storageKey,JSON.stringify(data));statusNode.textContent='';}
   catch {statusNode.textContent='Unable to save in this browser';}
 }
 function element(tag,parent,text){
