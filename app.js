@@ -51,11 +51,6 @@ function ordering(parent,list,index,item){
 }
 function render(){
   const form=forms[data.active];
-  const nav=document.querySelector('aside nav');nav.replaceChildren();
-  forms.forEach((f,i)=>{
-    const tab=button(nav,f.title,()=>{location.hash=routes[i];});
-    if(i===data.active) tab.setAttribute('aria-current','page');
-  });
   document.querySelector('#form-title').textContent=form.title;
   const details=document.querySelector('#details');details.replaceChildren();
   for(const key of ['Sketch title','Author','Date']) field(details,data.meta,key,key==='Date'?'date':'text');
