@@ -145,25 +145,72 @@ async function exportForm(index){
   const title=meta['Sketch title']||'Untitled sketch';
   const character=index===undefined?null:(records[index]['Character name']?.trim()||'Character '+(index+1));
   const name=[title,form.title,character].filter(Boolean).join(' - ');
-  const content=[{text:title,fontSize:24,bold:true},{text:form.title,fontSize:16,margin:[0,4,0,8]},
-    {text:'Author: '+(meta.Author||'—')+'    Date: '+(meta.Date||'—')}];
-  function note(record,key){
-    // Keep each label with its first line while allowing a long answer to flow.
-    content.push({text:key,bold:true,margin:[0,9,0,2],headlineLevel:1},{text:record[key]||'—'});
-  }
+  const rule=()=>({canvas:[{type:'line',x1:0,y1:0,x2:512,y2:0,lineWidth:0.6,lineColor:'#BDBDBD'}],margin:[0,0,0,0]});
+  const field=(label,value,options={})=>({stack:[
+    {text:label,style:'fieldLabel',headlineLevel:1},
+    {text:value||'—',style:options.italic?'dialogue':'body',margin:[0,3,0,0]}
+  ],margin:[0,0,0,10]});
+  const pair=(a,b)=>({columns:[{width:'*',...a},{width:'*',...b}],columnGap:24});
+  const band=text=>({
+    table:{widths:['*'],body:[[{text,style:'sectionHeading',fillColor:'#F3F3F3'}]]},layout:{
+      hLineWidth:i=>i===0?0.6:0,hLineColor:()=> '#BDBDBD',vLineWidth:()=>0,
+      paddingLeft:()=>10,paddingRight:()=>10,paddingTop:()=>7,paddingBottom:()=>7
+    },margin:[0,10,0,9],headlineLevel:1
+  });
+  // Keep very long or multiline answers full width for predictable page flow.
+  const short=value=>!value||(value.length<=160&&!value.includes('\n'));
+  const rows=(record,a,b)=>short(record[a])&&short(record[b])
+    ? [pair(field(a,record[a]),field(b,record[b]))]
+    : [field(a,record[a]),field(b,record[b])];
+  const content=[
+    {text:form.title,style:'formType'},
+    {text:title,style:'title'},rule(),
+    {columns:[
+      {width:'*',...field('Author',meta.Author)},
+      {width:150,...field('Date',meta.Date)}
+    ],columnGap:24,margin:[0,11,0,2]},
+    rule(),{text:' ',fontSize:2,margin:[0,0,0,7]}
+  ];
+  const sequence=n=>String(n+1).padStart(2,'0');
   records.forEach((record,i)=>{
     if(index!==undefined&&index!==i) return;
-    if(form.item) content.push({text:form.item+' '+(i+1)+(record['Character name']?' · '+record['Character name']:''),fontSize:16,bold:true,margin:[0,14,0,0],headlineLevel:1});
-    form.fields.filter(key=>key!=='Character name').forEach(key=>note(record,key));
-    (record.lines||[]).forEach((line,j)=>{
-      content.push({text:'Line '+(j+1),fontSize:13,bold:true,margin:[0,10,0,0],headlineLevel:1});
-      lineFields.forEach(key=>note(line,key));
-    });
+    if(!form.item){
+      for(const key of form.fields) content.push(band(key),{text:record[key]||'—',style:'body',margin:[0,0,0,10]});
+      return;
+    }
+    const characterName=record['Character name']?.trim();
+    const heading=form.item+' '+sequence(i)+(characterName?' / '+characterName:'');
+    content.push(band(heading));
+    const [a,b,c,d,e]=form.fields;
+    if(form.item==='Shot') content.push(field(a,record[a]),...rows(record,b,c),...rows(record,d,e));
+    if(form.item==='Moment') content.push(...rows(record,a,b),...rows(record,c,d));
+    if(form.item==='Character') {
+      content.push(...rows(record,b,c));
+      (record.lines||[]).forEach((line,j)=>{
+        content.push(rule(),{text:'Line '+(j+1),style:'fieldLabel',margin:[0,8,0,4],headlineLevel:1},
+          {text:line['Script line']||'—',style:'dialogue',margin:[0,0,0,5]},
+          {text:line.Direction||'—',style:'body',margin:[0,0,0,10]});
+      });
+    }
   });
   try {
-    const definition={info:{title:name},pageSize:'LETTER',pageMargins:[50,46,50,48],content,defaultStyle:{fontSize:11,lineHeight:1.2},
-      footer:(page,count)=>({text:page+' / '+count,alignment:'right',margin:[0,12,50,0],fontSize:9}),
-      pageBreakBefore:(node,following)=>node.headlineLevel===1&&!following.length};
+    const definition={
+      info:{title:name},pageSize:'LETTER',pageMargins:[50,49,50,51],content,
+      defaultStyle:{fontSize:11,color:'#171717',lineHeight:1.2},
+      styles:{
+        formType:{fontSize:11,bold:true,color:'#484848',margin:[0,0,0,8]},
+        title:{fontSize:29,bold:true,margin:[0,0,0,12]},
+        sectionHeading:{fontSize:11,bold:true},
+        fieldLabel:{fontSize:9,bold:true,color:'#484848'},
+        body:{fontSize:11},
+        dialogue:{fontSize:11,italics:true}
+      },
+      footer:(page,count)=>({width:512,margin:[50,6,50,0],stack:[
+        {canvas:[{type:'line',x1:0,y1:0,x2:512,y2:0,lineWidth:0.6,lineColor:'#BDBDBD'}]},
+        {columns:[{text:title+' / '+form.title,fontSize:8,color:'#484848',width:'*',maxHeight:18},{text:page+' / '+count,fontSize:8,color:'#484848',width:43,alignment:'right'}],columnGap:12,margin:[0,8,0,0]}
+      ]}),
+      pageBreakBefore:(node,following)=>node.headlineLevel===1&&!following.length
+    };
     let bytes=await new Promise((resolve,reject)=>pdfMake.createPdf(definition).getBuffer(resolve));
     if(script){
       const packet=await PDFLib.PDFDocument.load(bytes);
