@@ -126,11 +126,25 @@ fileInput.onchange=async()=>{
     fileStatus.textContent='Could not read this PDF. Choose an unlocked PDF or download the form on its own.';
   }
 };
+function filenamePart(value, fallback){
+  const clean=String(value??'').trim().replace(/\s+/g,'_').replace(/[<>:"/\\|?*\u0000-\u001f\u007f]/g,'_').replace(/^\.+|\.+$/g,'');
+  return clean || fallback;
+}
+function exportFilename(meta,form,character){
+  return [
+    filenamePart(meta['Sketch title'],'Untitled_sketch'),
+    filenamePart(meta.Author,'Unknown_author'),
+    filenamePart(meta.Date,'Undated'),
+    filenamePart(form.title,'Notes'),
+    character===null?null:filenamePart(character,'Character')
+  ].filter(part=>part!==null).join('-')+'.pdf';
+}
 async function exportForm(index){
   const form=forms[data.active], records=data.records[data.active], meta=data.meta;
   const script=include.checked?attachment:null;
   const title=meta['Sketch title']||'Untitled sketch';
-  const name=[title,form.title,index!==undefined?(records[index]['Character name']||'Character '+(index+1)):null].filter(Boolean).join(' - ');
+  const character=index===undefined?null:(records[index]['Character name']?.trim()||'Character '+(index+1));
+  const name=[title,form.title,character].filter(Boolean).join(' - ');
   const content=[{text:title,fontSize:24,bold:true},{text:form.title,fontSize:16,margin:[0,4,0,8]},
     {text:'Author: '+(meta.Author||'—')+'    Date: '+(meta.Date||'—')}];
   function note(record,key){
@@ -157,7 +171,7 @@ async function exportForm(index){
       bytes=await packet.save();
     }
     const url=URL.createObjectURL(new Blob([bytes],{type:'application/pdf'}));
-    const link=element('a',document.body);link.href=url;link.download=name.replace(/[^a-zA-Z0-9._ -]/g,'_')+'.pdf';link.click();link.remove();
+    const link=element('a',document.body);link.href=url;link.download=exportFilename(meta,form,character);link.click();link.remove();
     setTimeout(()=>URL.revokeObjectURL(url),60000);
     fileStatus.textContent='PDF downloaded.';
   } catch {fileStatus.textContent=script?'Could not create the packet. Uncheck “Include script in PDF” to download the form separately.':'Could not generate the PDF. Use your browser’s Print command to save the form.';}
